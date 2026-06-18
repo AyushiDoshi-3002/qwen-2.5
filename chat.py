@@ -1,7 +1,7 @@
 import streamlit as st
 from huggingface_hub import InferenceClient
 
-MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
+MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"
 SYSTEM_PROMPT = "You are a helpful, harmless, and honest assistant."
 
 st.set_page_config(page_title="Qwen2.5 Chat", page_icon="💬")
