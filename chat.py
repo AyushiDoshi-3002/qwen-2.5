@@ -1,30 +1,39 @@
 import streamlit as st
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from huggingface_hub import InferenceClient
 
-MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"  # 3B is too large for Streamlit Cloud free tier RAM
+MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
+SYSTEM_PROMPT = "You are a helpful, harmless, and honest assistant."
 
 st.set_page_config(page_title="Qwen2.5 Chat", page_icon="💬")
 st.title("💬 Qwen2.5 Chat")
 
-
-@st.cache_resource(show_spinner="Loading model... this can take a minute on first run")
-def load_model():
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-    model = AutoModelForCausalLM.from_pretrained(
-        MODEL_NAME,
-        dtype=torch.float32,
-        low_cpu_mem_usage=True,
-    )
-    model.eval()
-    return tokenizer, model
+with st.sidebar:
+    st.caption(f"Model: `{MODEL_NAME}`")
+    if st.button("🗑️ Clear conversation"):
+        st.session_state.messages = []
+        st.rerun()
 
 
-tokenizer, model = load_model()
+@st.cache_resource(show_spinner=False)
+def get_client() -> InferenceClient:
+    # HF_TOKEN is optional but strongly recommended to avoid rate limits.
+    # Add it to your app's Secrets: Settings → Secrets → HF_TOKEN = hf_xxx...
+    token = st.secrets.get("HF_TOKEN", None)
+    if not token:
+        st.sidebar.warning(
+            "⚠️ No HF_TOKEN set — unauthenticated requests are heavily rate-limited. "
+            "Add your token in Settings → Secrets.",
+            icon="🔑",
+        )
+    return InferenceClient(model=MODEL_NAME, token=token)
+
+
+client = get_client()
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# Render existing conversation
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
@@ -35,26 +44,31 @@ if prompt := st.chat_input("Ask me anything..."):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        placeholder = st.empty()
-        placeholder.markdown("Thinking...")
-
-        chat_history = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages]
-        text = tokenizer.apply_chat_template(chat_history, tokenize=False, add_generation_prompt=True)
-        inputs = tokenizer(text, return_tensors="pt")
-
-        with torch.no_grad():
-            output_ids = model.generate(
-                **inputs,
-                max_new_tokens=256,
+        # Prepend system prompt without storing it in session_state
+        messages_for_api = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            *st.session_state.messages,
+        ]
+        try:
+            stream = client.chat_completion(
+                messages=messages_for_api,
+                max_tokens=512,
                 temperature=0.7,
-                do_sample=True,
-                pad_token_id=tokenizer.eos_token_id,
+                top_p=0.9,
+                stream=True,
             )
 
-        response = tokenizer.decode(
-            output_ids[0][inputs["input_ids"].shape[1]:],
-            skip_special_tokens=True,
-        )
-        placeholder.markdown(response)
+            def token_stream():
+                for chunk in stream:
+                    content = chunk.choices[0].delta.content
+                    if content:
+                        yield content
 
-    st.session_state.messages.append({"role": "assistant", "content": response})
+            response = st.write_stream(token_stream())
+
+        except Exception as e:
+            st.error(f"⚠️ Generation failed: {e}")
+            response = None
+
+    if response:
+        st.session_state.messages.append({"role": "assistant", "content": response})
