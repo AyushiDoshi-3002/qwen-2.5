@@ -2,7 +2,7 @@ import streamlit as st
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-MODEL_NAME ="Qwen/Qwen2.5-0.5B-Instruct"  # 3B is too large for Streamlit Cloud free tier RAM
+MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"  # 3B is too large for Streamlit Cloud free tier RAM
 
 st.set_page_config(page_title="Qwen2.5 Chat", page_icon="💬")
 st.title("💬 Qwen2.5 Chat")
