@@ -1,2 +1,3 @@
 streamlit
 huggingface_hub
+import google.generativeai as genai
